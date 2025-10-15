@@ -17,7 +17,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 import json, os
 service_account_info = json.loads(os.getenv('GOOGLE_SERVICE_KEY'))
 creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-GS     = gspread.authorize(CREDS)
+GS     = gspread.authorize(creds)
 WS     = GS.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
 
 def ts(): return datetime.now().strftime("%Y-%m-%d %H:%M")
