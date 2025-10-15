@@ -14,7 +14,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 # --- Google Sheets ---
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-CREDS  = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+import json, os
+service_account_info = json.loads(os.getenv('GOOGLE_SERVICE_KEY'))
+creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 GS     = gspread.authorize(CREDS)
 WS     = GS.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
 
