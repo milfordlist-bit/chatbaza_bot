@@ -84,14 +84,37 @@ def main():
     if not r.get("ok"): raise SystemExit(f"Токен не прошёл проверку: {r}")
     print(f"✅ Telegram OK: @{r['result']['username']}")
     print(f"✅ Sheets OK: лист «{SHEET_NAME}» подключён")
+    
+keep_awake()  # запуск анти-сна
 
     app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start",  cmd_start))
+    app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CallbackQueryHandler(on_get_access, pattern="^get_access$"))
+    app.add_handler(CallbackQueryHandler(on_get_access, pattern="get_access"))
     app.add_handler(MessageHandler(filters.ALL, on_group_message))
-    print("🚀 Бот запущен. Ожидаю сообщения…")
+
+    print("🚀 Бот запущен. Ожидаю сообщения.")
     app.run_polling()
 
-if __name__ == "__main__":
+
+# === Антисон ===
+import threading
+import time
+import requests
+
+WAKE_URL = "https://chatbaza-bot-1.onrender.com"  # вставь сюда ссылку из Render
+
+def keep_awake():
+    def ping():
+        while True:
+            try:
+                requests.get(WAKE_URL, timeout=5)
+            except Exception:
+                pass
+            time.sleep(60)  # пингуем каждые 60 секунд
+    t = threading.Thread(target=ping, daemon=True)
+    t.start()
+
+
+if name == "__main__":
     main()
