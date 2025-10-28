@@ -79,19 +79,22 @@ async def on_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
 
 def main():
-    # Быстрая проверка токена
+    # быстрая проверка токена
     r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe").json()
-    if not r.get("ok"): raise SystemExit(f"Токен не прошёл проверку: {r}")
-    print(f"✅ Telegram OK: @{r['result']['username']}")
-    print(f"✅ Sheets OK: лист «{SHEET_NAME}» подключён")
-    
-keep_awake()  # запуск анти-сна
+    if not r.get("ok"):
+        raise SystemExit(f"Токен не прошёл проверку: {r}")
 
-        app = Application.builder().token(BOT_TOKEN).build()
-        app.add_handler(CommandHandler("start", cmd_start))
-        app.add_handler(CommandHandler("status", cmd_status))
-        app.add_handler(CallbackQueryHandler(on_get_access, pattern="get_access"))
-        app.add_handler(MessageHandler(filters.ALL, on_group_message))
+    print(f"✅ Telegram OK: @{r['result']['username']}")
+    print(f"✅ Sheets OK: лист ({SHEET_NAME}) подключён")
+
+    # запуск анти-сна
+    keep_awake()
+
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CallbackQueryHandler(on_get_access, pattern="get_access"))
+    app.add_handler(MessageHandler(filters.ALL, on_group_message))
 
     print("🚀 Бот запущен. Ожидаю сообщения.")
     app.run_polling()
