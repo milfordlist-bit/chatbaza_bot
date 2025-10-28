@@ -23,8 +23,8 @@ import json
 # =========================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # токен бота из Render (Env vars)
-SHEET_ID = "тут_твой_ID_таблицы_из_URL"  # пример: "1Q0wDfT0sU4eSdsNn2spVsQb7oY... и т.д."
-SHEET_NAME = "Имя листа в таблице"  # пример: "Лист1"
+SHEET_ID = "1qqWJ_DTnGSLdeSd5kni2pSvG17O7yvMSRJ4mWYDlTkk"  # пример: "1Q0wDfT0sU4eSdsNn2spVsQb7oY... и т.д."
+SHEET_NAME = "СТИЛЬ"  # пример: "Лист1"
 
 WAKE_URL = "https://chatbaza-bot-1.onrender.com"  # <-- ССЫЛКА ТВОЕГО СЕРВИСА В RENDER
 
