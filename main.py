@@ -148,3 +148,106 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 # КНОПКА «ПОЛУЧИТЬ ДОСТУП»
 # =========================
+
+async def on_get_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    text_lines = [
+        "1/5. Всем новым — «Наблюдатель».",
+        "2/5. Писать могут: «Участник», «Партнёр», «Резидент».",
+        "3/5. Тарифы: Участник 2 000₽/мес; Партнёр 10 000₽/мес.",
+        "4/5. Напиши «Хочу доступ» — пришлём оплату и включим права.",
+        "5/5. Раз в неделю — дайджест мероприятий.",
+    ]
+
+    for m in text_lines:
+        try:
+            await q.message.chat.send_message(m)
+        except:
+            pass
+
+
+# =========================
+# СООБЩЕНИЯ В ГРУППЕ
+# =========================
+
+async def on_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # игнорируем ЛЮБЫЕ сообщения не в группе
+    if update.effective_chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        return
+
+    # записываем юзера / апдейтим таблицу
+    upsert_user(update.effective_user)
+
+    # берём статус
+    st = get_status(update.effective_user.id)
+
+    # если не имеет права писать — удаляем его сообщение и шлём ему в личку
+    if st not in ("Участник", "Партнёр", "Резидент"):
+        try:
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=update.effective_message.message_id
+            )
+        except:
+            pass
+
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text=(
+                    "Пока статус «Наблюдатель», писать в чат нельзя.\n"
+                    "Нажми «Получить доступ» в /start — пришлю инструкцию."
+                )
+            )
+        except:
+            pass
+
+
+# =========================
+# АНТИСОН (НЕ ДАЁМ РЕНДЕРУ УСНУТЬ)
+# =========================
+
+def start_keepalive_thread():
+    def ping_forever():
+        while True:
+            try:
+                requests.get(WAKE_URL, timeout=5)
+            except Exception:
+                pass
+            time.sleep(60)  # каждые 60 секунд пингуем свой же URL
+    t = threading.Thread(target=ping_forever, daemon=True)
+    t.start()
+
+
+# =========================
+# MAIN
+# =========================
+
+def main():
+    # 1. проверим токен бота (чтобы упасть сразу, а не молча висеть)
+    r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe").json()
+    if not r.get("ok"):
+        raise SystemExit(f"Токен не прошёл проверку: {r}")
+
+    print(f"✅ Telegram OK: @{r['result']['username']}")
+    print(f"✅ Sheets OK: лист ({SHEET_NAME}) подключён")
+
+    # 2. запустим антисон в отдельном потоке
+    start_keepalive_thread()
+
+    # 3. собираем приложение телеграма
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CallbackQueryHandler(on_get_access, pattern="get_access"))
+    app.add_handler(MessageHandler(filters.ALL, on_group_message))
+
+    print("🤖 Бот запущен. Ожидаю сообщения.")
+    app.run_polling()
+
+
+if name == "__main__":
+    main()
