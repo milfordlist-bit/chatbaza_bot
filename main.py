@@ -87,11 +87,11 @@ def main():
     
 keep_awake()  # запуск анти-сна
 
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CallbackQueryHandler(on_get_access, pattern="get_access"))
-    app.add_handler(MessageHandler(filters.ALL, on_group_message))
+        app = Application.builder().token(BOT_TOKEN).build()
+        app.add_handler(CommandHandler("start", cmd_start))
+        app.add_handler(CommandHandler("status", cmd_status))
+        app.add_handler(CallbackQueryHandler(on_get_access, pattern="get_access"))
+        app.add_handler(MessageHandler(filters.ALL, on_group_message))
 
     print("🚀 Бот запущен. Ожидаю сообщения.")
     app.run_polling()
