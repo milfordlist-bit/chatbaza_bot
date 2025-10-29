@@ -248,6 +248,22 @@ def main():
     print("🤖 Бот запущен. Ожидаю сообщения.")
     app.run_polling()
 
+from flask import Flask
+import threading
 
-if __name__ == "__main__":
+app_flask = Flask(__name__)
+
+@app_flask.route('/')
+def home():
+    return "Bot is alive", 200
+
+def run_flask():
+    app_flask.run(host='0.0.0.0', port=10000)
+
+# ✅ Сначала запускаем Flask
+threading.Thread(target=run_flask).start()
+
+# Потом запускаем основную программу
+if name == "__main__":
     main()
+
