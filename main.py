@@ -284,7 +284,7 @@ async def on_user_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     member = update.chat_member.new_chat_member.user
 
     # Добавляем пользователя в Google-таблицу со статусом "Наблюдатель"
-    upsert_user(member)
+    upsert_user(member.id)
 
     try:
         await context.bot.send_message(
