@@ -231,50 +231,52 @@ async def on_role_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def on_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Логика:
-    - если человек не в статусе «Участник» / «Партнёр» / «Резидент»,
-      то его сообщение удаляем и шлём ему в личку правила.
-    - если он ок — ничего не делаем.
+    Проверка прав на отправку сообщений.
+    Если статус пользователя не 'Участник', 'Партнёр' или 'Резидент',
+    сообщение удаляется, а в ЛС отправляется уведомление.
     """
+
     msg = update.effective_message
     chat = update.effective_chat
     user = update.effective_user
 
-    # Работать только в обычных / супергруппах (то есть не в ЛС)
+    # Игнорируем, если это не групповое сообщение
     if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         return
 
-    # Обновим запись про него
-    upsert_user(user)
+    # Получаем chat_id
+    user_chat_id = user.id
 
-    st = get_status(user.id)
-    allowed_statuses = ("Участник", "Партнёр", "Резидент")
+    # Проверяем статус пользователя из Google Sheets
+    st = get_status(user_chat_id)  # ✅ убедись, что функция get_status уже есть выше в коде
 
+    # Разрешённые статусы
+    allowed_statuses = {"Участник", "Партнёр", "Партнер", "Резидент"}
+
+    # Если статус не в списке разрешённых
     if st not in allowed_statuses:
-        # 1. Удалить сообщение в чате
         try:
             await context.bot.delete_message(chat.id, msg.message_id)
-        except Exception:
-            pass
+        except Exception as e:
+            print("Ошибка при удалении сообщения:", e)
 
-        # 2. ЛС пользователю — что делать дальше
+        # Отправляем предупреждение пользователю
         text_for_user = (
             "Пока статус «Наблюдатель», писать в чат нельзя.\n\n"
             "Что дальше?\n"
-            "1️⃣ Нажми /start у бота – там условия участия.\n"
-            f"2️⃣ Или сразу напиши {ADMIN_USERNAME} фразу «Хочу доступ».\n"
+            "1️⃣ Нажми /start у бота — там условия участия.\n"
+            "2️⃣ Или сразу напиши @biznesclub_baza фразу «Хочу доступ».\n"
             "Мы пришлём оплату и включим права."
         )
         try:
-            await context.bot.send_message(
-                chat_id=user.id,
-                text=text_for_user
-            )
-        except Exception:
-            # если не может написать в ЛС (например, он не нажал /start)
-            pass
+            await context.bot.send_message(user_chat_id, text_for_user)
+        except Exception as e:
+            print("Ошибка при отправке личного сообщения:", e)
 
+        return
 
+    # Если статус разрешён — ничего не делаем
+    return
 # ======================
 # АНТИСОН (Flask-сервер + пинг Render)
 # ======================
