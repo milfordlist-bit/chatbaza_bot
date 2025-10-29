@@ -1,9 +1,19 @@
 import logging
 import requests
 from datetime import datetime
-import gspread
+import os
+import json
+import threading
+import time
+
 from google.oauth2.service_account import Credentials
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import gspread
+
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+)
 from telegram.ext import (
     Application,
     MessageHandler,
@@ -13,220 +23,292 @@ from telegram.ext import (
     filters,
 )
 from telegram.constants import ChatType
-import threading
-import time
-import os
-import json
 
-# =========================
+# ======================
 # НАСТРОЙКИ
-# =========================
+# ======================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # токен бота из Render (Env vars)
-SHEET_ID = "1qqWJ_DTnGSLdeSd5kni2pSvG17O7yvMSRJ4mWYDlTkk"  # пример: "1Q0wDfT0sU4eSdsNn2spVsQb7oY... и т.д."
-SHEET_NAME = "СТИЛЬ"  # пример: "Лист1"
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота из Render (Env vars)
 
-WAKE_URL = "https://chatbaza-bot-1.onrender.com"  # <-- ССЫЛКА ТВОЕГО СЕРВИСА В RENDER
+SHEET_ID = "1q0wQ_DTnGsULdeSdsNsn2pSVgI70YvWNSR34mWVD1Tkk"  # ID гугл-таблицы
+SHEET_NAME = "СТИЛЬ"  # имя листа (вкладки) в таблице
+
+ADMIN_USERNAME = "@biznesclub_baza"  # куда писать, если хочет оплатить
+PARTICIPANT_PRICE = "2 000₽/мес"
+PARTNER_PRICE = "10 000₽/мес"
+
+# Антисон пингует бота, чтобы Render не глушил
+WAKE_URL = "https://chatbaza-bot-1.onrender.com/"  # адрес твоего сервиса на Render
+
+
+# ======================
+# ЛОГИРОВАНИЕ
+# ======================
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-# =========================
-# GOOGLE SHEETS КЛИЕНТ
-# =========================
+# ======================
+# GOOGLE SHEETS
+# ======================
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-service_account_info = json.loads(os.getenv("GOOGLE_SERVICE_KEY"))  # ключ сервисного аккаунта из Render
+service_account_info = json.loads(os.getenv("GOOGLE_SERVICE_KEY"))
 creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-GS = gspread.authorize(creds)
-WS = GS.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
+gs = gspread.authorize(creds)
+WS = gs.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
 
 
-# =========================
-# УТИЛИТЫ
-# =========================
+def tstr():
+    return datetime.now().strftime("%d.%m.%Y %H:%M")
 
-def ts():
-    # текущая дата/время как строка
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
 
-def find_row_by_chat_id(chat_id: int | str):
-    cid = str(chat_id)
-    for i, v in enumerate(WS.col_values(1), start=1):
-        if v.strip() == cid:
+def find_row_by_chat_id(chat_id: int):
+    """Ищем строку пользователя по chat_id, если есть в таблице"""
+    chat_id = str(chat_id)
+    col_values = WS.col_values(1)  # допустим, в колонке A лежит chat_id
+    for i, v in enumerate(col_values, start=1):
+        if v.strip() == chat_id:
             return i
     return None
 
-def get_status(chat_id: int | str) -> str:
+
+def get_status(chat_id: int) -> str:
+    """Статус человека из таблицы.
+       Если нет строки — значит новый (наблюдатель)."""
     row = find_row_by_chat_id(chat_id)
     if not row:
         return "Наблюдатель"
-    # статус хранится в колонке D (4)
-    return (WS.cell(row, 4).value or "Наблюдатель").strip()
+    # допустим, статус в колонке D (четвёртая)
+    val = WS.cell(row, 4).value or ""
+    return val.strip() or "Наблюдатель"
+
 
 def upsert_user(user):
-    """
-    Сохраняем/обновляем юзера в гугл-таблицу:
-    A: chat_id
-    B: username
-    C: full_name
-    D: статус
-    E: created_at
-    F: updated_at
-    """
+    """Записываем / обновляем человека в таблицу"""
     chat_id = user.id
     username = (user.username or "").strip()
     full_name = (user.first_name or "") + " " + (user.last_name or "")
     full_name = full_name.strip()
 
     row = find_row_by_chat_id(chat_id)
-
-    now = ts()
-
     if row:
-        # обновляем существующую строку (кроме created_at)
+        # Обновляем существующую строку
         WS.update(
-            f"A{row}:F{row}",
+            f"A{row}:H{row}",
             [[
                 str(chat_id),
                 username,
                 full_name,
                 get_status(chat_id),
-                WS.cell(row, 5).value or now,
-                now
-            ]]
+                tstr(),
+                "", "",  # запас под будущее
+            ]],
         )
     else:
-        # добавляем новую строку
+        # Добавляем новую строку
         WS.append_row([
             str(chat_id),
             username,
             full_name,
             "Наблюдатель",
-            now,
-            now
+            tstr(),
+            "",
+            "",
+            "",
         ])
 
 
-# =========================
+# ======================
+# ТЕКСТЫ / КНОПКИ
+# ======================
+
+def build_start_message():
+    return (
+        "Привет! Это БАЗА.\n"
+        "Статус по умолчанию — «Наблюдатель».\n\n"
+        "Вот как устроено:\n\n"
+        "1/5. Всем новым — «Наблюдатель».\n"
+        "2/5. Писать могут: «Участник», «Партнёр», «Резидент».\n"
+        f"3/5. Тарифы:\n"
+        f"   • Участник — {PARTICIPANT_PRICE}\n"
+        f"   • Партнёр — {PARTNER_PRICE}\n"
+        "4/5. Напиши «Хочу доступ» — пришлём оплату и включим права.\n"
+        "5/5. Раз в неделю — дайджест мероприятий.\n\n"
+        "Выбери, что хочешь сделать 👇"
+    )
+
+
+def start_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💬 Написать администратору", url=f"https://t.me/{ADMIN_USERNAME.lstrip('@')}")],
+        [InlineKeyboardButton("📝 Хочу стать Участником", callback_data="role_participant")],
+        [InlineKeyboardButton("🤝 Хочу стать Партнёром", callback_data="role_partner")],
+    ])
+
+
+def build_upgrade_text(role: str):
+    if role == "participant":
+        price = PARTICIPANT_PRICE
+        role_name = "Участник"
+    else:
+        price = PARTNER_PRICE
+        role_name = "Партнёр"
+
+    return (
+        f"Статус «{role_name}».\n\n"
+        f"Стоимость: {price}.\n\n"
+        f"Напиши админу {ADMIN_USERNAME} фразу:\n"
+        f"«Хочу стать {role_name}» — тебе пришлют оплату и включат права."
+    )
+
+
+# ======================
 # ХЕНДЛЕРЫ КОМАНД
-# =========================
+# ======================
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /start в ЛС с ботом."""
     user = update.effective_user
     upsert_user(user)
 
-    kb = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Получить доступ", callback_data="get_access")]]
-    )
-
     await update.message.reply_text(
-        "Привет! Это БАЗА. Статус по умолчанию — «Наблюдатель».",
-        reply_markup=kb
+        build_start_message(),
+        reply_markup=start_keyboard()
     )
 
-    text_lines = [
-        "1/5. Всем новым — «Наблюдатель».",
-        "2/5. Писать могут: «Участник», «Партнёр», «Резидент».",
-        "3/5. Тарифы: Участник 2 000₽/мес; Партнёр 10 000₽/мес.",
-        "4/5. Напиши «Хочу доступ» — пришлём оплату и включим права.",
-        "5/5. Раз в неделю — дайджест мероприятий.",
-    ]
-    for m in text_lines:
-        try:
-            await update.message.reply_text(m)
-        except:
-            pass
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /status в ЛС с ботом."""
     st = get_status(update.effective_user.id)
     await update.message.reply_text(f"Текущий статус: {st}")
 
 
-# =========================
-# КНОПКА «ПОЛУЧИТЬ ДОСТУП»
-# =========================
+# ======================
+# ОБРАБОТКА КНОПОК (CallbackQuery)
+# ======================
 
 async def on_get_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ЭТО УЖЕ НЕ НУЖНО В ТАКОМ ВИДЕ, но оставим чтобы не падало,
+    если у кого-то висит старая кнопка 'get_access'."""
     q = update.callback_query
     await q.answer()
-
-    text_lines = [
-        "1/5. Всем новым — «Наблюдатель».",
-        "2/5. Писать могут: «Участник», «Партнёр», «Резидент».",
-        "3/5. Тарифы: Участник 2 000₽/мес; Партнёр 10 000₽/мес.",
-        "4/5. Напиши «Хочу доступ» — пришлём оплату и включим права.",
-        "5/5. Раз в неделю — дайджест мероприятий.",
-    ]
-
-    for m in text_lines:
-        try:
-            await q.message.chat.send_message(m)
-        except:
-            pass
+    try:
+        await q.message.reply_text(
+            f"Напиши админу {ADMIN_USERNAME} «Хочу доступ» — пришлём оплату и включим права."
+        )
+    except Exception:
+        pass
 
 
-# =========================
+async def on_role_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Новые кнопки role_participant / role_partner."""
+    q = update.callback_query
+    data = q.data
+    await q.answer()
+
+    if data == "role_participant":
+        txt = build_upgrade_text("participant")
+    elif data == "role_partner":
+        txt = build_upgrade_text("partner")
+    else:
+        txt = (
+            f"Если хочешь права — напиши {ADMIN_USERNAME}.\n"
+            "Мы пришлём оплату и подключим тебя."
+        )
+
+    try:
+        await q.message.reply_text(txt)
+    except Exception:
+        pass
+
+
+# ======================
 # СООБЩЕНИЯ В ГРУППЕ
-# =========================
+# ======================
 
 async def on_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # игнорируем ЛЮБЫЕ сообщения не в группе
-    if update.effective_chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+    """
+    Логика:
+    - если человек не в статусе «Участник» / «Партнёр» / «Резидент»,
+      то его сообщение удаляем и шлём ему в личку правила.
+    - если он ок — ничего не делаем.
+    """
+    msg = update.effective_message
+    chat = update.effective_chat
+    user = update.effective_user
+
+    # Работать только в обычных / супергруппах (то есть не в ЛС)
+    if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         return
 
-    # записываем юзера / апдейтим таблицу
-    upsert_user(update.effective_user)
+    # Обновим запись про него
+    upsert_user(user)
 
-    # берём статус
-    st = get_status(update.effective_user.id)
+    st = get_status(user.id)
+    allowed_statuses = ("Участник", "Партнёр", "Резидент")
 
-    # если не имеет права писать — удаляем его сообщение и шлём ему в личку
-    if st not in ("Участник", "Партнёр", "Резидент"):
+    if st not in allowed_statuses:
+        # 1. Удалить сообщение в чате
         try:
-            await context.bot.delete_message(
-                chat_id=update.effective_chat.id,
-                message_id=update.effective_message.message_id
-            )
-        except:
+            await context.bot.delete_message(chat.id, msg.message_id)
+        except Exception:
             pass
 
+        # 2. ЛС пользователю — что делать дальше
+        text_for_user = (
+            "Пока статус «Наблюдатель», писать в чат нельзя.\n\n"
+            "Что дальше?\n"
+            "1️⃣ Нажми /start у бота – там условия участия.\n"
+            f"2️⃣ Или сразу напиши {ADMIN_USERNAME} фразу «Хочу доступ».\n"
+            "Мы пришлём оплату и включим права."
+        )
         try:
             await context.bot.send_message(
-                chat_id=update.effective_user.id,
-                text=(
-                    "Пока статус «Наблюдатель», писать в чат нельзя.\n"
-                    "Нажми «Получить доступ» в /start — пришлю инструкцию."
-                )
+                chat_id=user.id,
+                text=text_for_user
             )
-        except:
+        except Exception:
+            # если не может написать в ЛС (например, он не нажал /start)
             pass
 
 
-# =========================
-# АНТИСОН (НЕ ДАЁМ РЕНДЕРУ УСНУТЬ)
-# =========================
+# ======================
+# АНТИСОН (Flask-сервер + пинг Render)
+# ======================
 
-def start_keepalive_thread():
-    def ping_forever():
-        while True:
-            try:
-                requests.get(WAKE_URL, timeout=5)
-            except Exception:
-                pass
-            time.sleep(60)  # каждые 60 секунд пингуем свой же URL
-    t = threading.Thread(target=ping_forever, daemon=True)
-    t.start()
+from flask import Flask
+
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def home():
+    return "Bot is alive", 200
 
 
-# =========================
-# MAIN
-# =========================
+def run_flask():
+    # маленький HTTP-сервер на отдельном потоке
+    flask_app.run(host="0.0.0.0", port=10000)
+
+
+def ping_forever():
+    # локальный пинг самого Render-URL, чтобы инстанс не выгружался
+    while True:
+        try:
+            requests.get(WAKE_URL, timeout=5)
+        except Exception:
+            pass
+        time.sleep(60)  # каждые 60 секунд
+
+
+# ======================
+# ЗАПУСК ПРИЛОЖЕНИЯ
+# ======================
 
 def main():
-    # 1. проверим токен бота (чтобы упасть сразу, а не молча висеть)
+    # Быстрая проверка токена
     r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe").json()
     if not r.get("ok"):
         raise SystemExit(f"Токен не прошёл проверку: {r}")
@@ -234,36 +316,29 @@ def main():
     print(f"✅ Telegram OK: @{r['result']['username']}")
     print(f"✅ Sheets OK: лист ({SHEET_NAME}) подключён")
 
-    # 2. запустим антисон в отдельном потоке
-    start_keepalive_thread()
+    # стартуем антисоновые потоки ДО запуска бота
+    threading.Thread(target=run_flask, daemon=True).start()
+    threading.Thread(target=ping_forever, daemon=True).start()
 
-    # 3. собираем приложение телеграма
+    # Telegram приложение
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Команды
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
+
+    # Старый колбэк (чтобы не упасть на старых кнопках)
     app.add_handler(CallbackQueryHandler(on_get_access, pattern="get_access"))
+
+    # Новые колбэки (тарифы)
+    app.add_handler(CallbackQueryHandler(on_role_choice, pattern="role_"))
+
+    # Сообщения в группе
     app.add_handler(MessageHandler(filters.ALL, on_group_message))
 
     print("🤖 Бот запущен. Ожидаю сообщения.")
     app.run_polling()
 
-from flask import Flask
-import threading
 
-app_flask = Flask(__name__)
-
-@app_flask.route('/')
-def home():
-    return "Bot is alive", 200
-
-def run_flask():
-    app_flask.run(host='0.0.0.0', port=10000)
-
-# ✅ Сначала запускаем Flask
-threading.Thread(target=run_flask).start()
-
-# Потом запускаем основную программу
-if name == "__main__":
+if __name__ == "__main__":
     main()
-
