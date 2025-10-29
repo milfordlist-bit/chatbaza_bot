@@ -30,7 +30,7 @@ from telegram.constants import ChatType
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота из Render (Env vars)
 
-SHEET_ID = "1q0wQ_DTnGsULdeSdsNsn2pSVgI70YvWNSR34mWVD1Tkk"  # ID гугл-таблицы
+SHEET_ID = "1qqWJ_DTnGSLdeSd5kni2pSvG17O7yvMSRJ4mWYDlTkk"  # ID гугл-таблицы
 SHEET_NAME = "СТИЛЬ"  # имя листа (вкладки) в таблице
 
 ADMIN_USERNAME = "@biznesclub_baza"  # куда писать, если хочет оплатить
