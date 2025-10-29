@@ -34,7 +34,7 @@ SHEET_ID = "1qqWJ_DTnGSLdeSd5kni2pSvG17O7yvMSRJ4mWYDlTkk"  # ID гугл-таб�
 SHEET_NAME = "СТИЛЬ"  # имя листа (вкладки) в таблице
 
 ADMIN_USERNAME = "@biznesclub_baza"  # куда писать, если хочет оплатить
-PARTICIPANT_PRICE = "2 000₽/мес"
+PARTICIPANT_PRICE = "1 000₽/мес"
 PARTNER_PRICE = "10 000₽/мес"
 
 # Антисон пингует бота, чтобы Render не глушил
