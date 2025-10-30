@@ -277,6 +277,7 @@ async def on_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 # === Реакция на вступление нового участника в группу ===
 async def on_user_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("on_user_join: chat_member =", update.chat_member)
     """
     Срабатывает на статус-ивенты (ChatMemberHandler).
     Добавляем в таблицу ТОЛЬКО когда пользователь реально стал member.
@@ -335,6 +336,7 @@ def ping_forever():
         time.sleep(60)  # каждые 60 секунд
 
 async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("on_new_chat_members: new members =", getattr(update.message, "new_chat_members", None))
     """
     Срабатывает, когда приходит service-message с new_chat_members.
     Добавляем каждого нового участника в таблицу.
