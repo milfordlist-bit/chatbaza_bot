@@ -278,13 +278,23 @@ async def on_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === Реакция на вступление нового участника в группу ===
 async def on_user_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Срабатывает, когда новый участник попал в чат.
-    Добавляем его в таблицу и отправляем привет в личку.
+    Срабатывает на статус-ивенты (ChatMemberHandler).
+    Добавляем в таблицу ТОЛЬКО когда пользователь реально стал member.
     """
-    member = update.chat_member.new_chat_member.user
+    cm = update.chat_member
+    if not cm or cm.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        return
 
-    # Добавляем пользователя в Google-таблицу со статусом "Наблюдатель"
-    upsert_user(member.id)
+    try:
+        new = cm.new_chat_member
+        if not new or new.status != "member":
+            return
+        member = new.user
+    except Exception:
+        return
+
+    # ВАЖНО: передаём ОБЪЕКТ user, НЕ .id
+    upsert_user(member)
 
     try:
         await context.bot.send_message(
@@ -295,18 +305,14 @@ async def on_user_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Чтобы получить право писать:\n"
                 "1️⃣ Открой @chatbazabot и нажми /start.\n"
                 "2️⃣ Выбери формат участия — «Участник» или «Партнёр».\n"
-                "3️⃣ Или сразу напиши администратору @biznesclub_baza фразу «Хочу доступ» — пришлём оплату и включим права."
+                "3️⃣ Или сразу напиши администратору @biznesclub_baza «Хочу доступ»."
             )
         )
-    except Exception as e:
-        print("Ошибка при отправке приветственного сообщения:", e)
+    except Exception:
         pass
-    # Если статус разрешён — ничего не делаем
-    return
+        # ======================
+# АНТИСОН (Flask-сервер для Render)
 # ======================
-# АНТИСОН (Flask-сервер + пинг Render)
-# ======================
-
 from flask import Flask
 
 flask_app = Flask(__name__)
@@ -314,8 +320,6 @@ flask_app = Flask(__name__)
 @flask_app.route("/")
 def home():
     return "Bot is alive", 200
-
-
 def run_flask():
     # маленький HTTP-сервер на отдельном потоке
     flask_app.run(host="0.0.0.0", port=10000)
@@ -330,7 +334,21 @@ def ping_forever():
             pass
         time.sleep(60)  # каждые 60 секунд
 
+async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Срабатывает, когда приходит service-message с new_chat_members.
+    Добавляем каждого нового участника в таблицу.
+    """
+    if update.effective_chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        return
+    if not update.message or not update.message.new_chat_members:
+        return
 
+    for u in update.message.new_chat_members:
+        try:
+            upsert_user(u)  # важно: передаём объект User
+        except Exception:
+            logging.exception("Sheets error (new_chat_members)")
 # ======================
 # ЗАПУСК ПРИЛОЖЕНИЯ
 # ======================
@@ -364,6 +382,7 @@ def main():
     # Сообщения в группе
     app.add_handler(MessageHandler(filters.ALL, on_group_message))
     app.add_handler(ChatMemberHandler(on_user_join, ChatMemberHandler.CHAT_MEMBER))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_chat_members))
     print("🤖 Бот запущен. Ожидаю сообщения.")
     app.run_polling()
 
