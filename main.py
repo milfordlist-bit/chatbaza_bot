@@ -275,6 +275,7 @@ async def on_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("Ошибка при отправке личного сообщения:", e)
 
         return
+        
 # === Реакция на вступление нового участника в группу ===
 async def on_user_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("on_user_join: chat_member =", update.chat_member)
