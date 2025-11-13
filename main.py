@@ -241,6 +241,12 @@ async def on_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
 
+   # 🔥 Гарантируем, что пользователь есть в таблице
+    try:
+        upsert_user(user)
+    except Exception as e:
+        logging.exception("Sheets error (on_group_message): %s", e)
+        
     # Игнорируем, если это не групповое сообщение
     if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         return
